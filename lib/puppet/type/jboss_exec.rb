@@ -149,6 +149,42 @@ Puppet::Type.newtype(:jboss_exec) do
     end
   end
 
+  ##
+  # This is a helper function for should_execute? It handles retries
+  # by assuming that a cli timeout will show up as a parse error
+  # The actual provider.execute_command should happen inside the block
+  # of this function.
+  def handle_conditional_retry &block
+    tries = self[:tries]
+    try_sleep = self[:try_sleep]
+    last_error = nil
+    result = nil
+    tries.times do |try|
+      debug("Conditional execution try #{try+1}/#{tries}") if tries > 1
+      begin
+        result = block.call
+        last_error = nil
+        break
+      rescue JSON::ParserError => e
+        last_error = e
+        debug("Possible cli timeout while executing conditional command")
+        # sleep before next attempt
+        if try_sleep > 0 and tries > 1
+          debug("Sleeping for #{try_sleep} seconds between tries")
+          sleep try_sleep
+        end
+      end
+    end
+
+    #if there was an error even after retrying
+    unless last_error.nil?
+      raise last_error
+    end
+
+    #if we get here, then the command was successful
+    return result
+  end
+
   def should_execute?(refreshing=false)
     require 'puppet/util/cli_parser'
     require 'puppet/util/path_generator'
@@ -157,20 +193,25 @@ Puppet::Type.newtype(:jboss_exec) do
 
     parser = CliParser.new
     if self[:onlyif]
-      check = parser.parse_condition self[:onlyif]
-      check_command = PathGenerator.format_command check[1][0], check[1][1], check[1][2]
-      data = provider.execute_command check_command
-      result = check[0].call data
+      return handle_conditional_retry {
+        check = parser.parse_condition self[:onlyif]
+        check_command = PathGenerator.format_command check[1][0], check[1][1], check[1][2]
+        data = provider.execute_command check_command
+        result = check[0].call data
 
-      return false if !result
+        false if !result
+      }
     end
-    if self[:unless]
-      check = parser.parse_condition self[:unless]
-      check_command = PathGenerator.format_command check[1][0], check[1][1], check[1][2]
-      data = provider.execute_command check_command
-      result = check[0].call data
 
-      return false if result
+    if self[:unless]
+      return handle_conditional_retry {
+        check = parser.parse_condition self[:unless]
+        check_command = PathGenerator.format_command check[1][0], check[1][1], check[1][2]
+        data = provider.execute_command check_command
+        result = check[0].call data
+
+        false if result
+      }
     end
     true
   end
