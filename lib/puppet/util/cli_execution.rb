@@ -39,7 +39,7 @@ module Puppet::Util::CliExecution
         #in batch mode, we either exit on a success or we keep retrying up until our
         #retries are exhausted
         return {'outcome' => 'success'} if output =~ /The batch executed successfully/
-        if try >= tries
+        if try >= (tries-1)
           return {'outcome' => 'failure', 'failure-description' => output.lines.to_a}
         end
         #else, retry

@@ -72,16 +72,23 @@ Puppet::Type.type(:jboss_batch).provide(:cli) do
   end
 
   def flush
+    Puppet.debug("TPH: in flush for batch #{name}")
+    
     # run the batch 
     output = execute_batch(@property_hash[:batch], @new_values[:batch])
-        
+   
     if (!output)
+      Puppet.debug("TPH: did not get output from batch #{name}")
       self.fail("Error executing CLI batch `#{resource[:title]}`: #{last_error}")
+    else
+      Puppet.debug("TPH: got output for batch #{name}:\n #{output}")
     end
 
     # determine if the execution was a success
     success = (resource[:expected_output].to_a - output.to_a).empty?
 
+    Puppet.debug("TPH: success for batch #{name}: #{success}")
+    
     # log output if required
     if (resource[:logoutput] == :true || (!success && resource[:logoutput] == :on_failure))
       self.send(@resource[:loglevel], output.inspect)
@@ -118,7 +125,7 @@ Puppet::Type.type(:jboss_batch).provide(:cli) do
       # else if batch element is a command
       # else error
       if new_batch_element.has_key?('address')
-
+        
         # if the resource currently exists
         # else if the resource does not currently exist
         if current_batch_element['ensure'].to_sym == :present
